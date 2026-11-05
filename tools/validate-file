@@ -142,6 +142,15 @@ sub validate_file {
 		'username must match the lowercase filename (case-insensitive)'
 	    );
 
+	# at this point everything below is responsible for validating the
+	# "symbol", which can be an emoji or some other visible char.
+
+	# the bundled emoji-test.txt list is our authoritative source - this way
+	# we can avoid differences in perl versions.
+	return 1 if exists $emojis->{$symbol};
+
+	# we don't have an emoji - try our best to verify it is only 1 *thing*
+
 	# ensure only 1 visible grapheme is contained in the "symbol"
 	my @graphemes = $symbol =~ /\X/g;
 	@graphemes == 1 && $graphemes[0] eq $symbol
@@ -156,27 +165,27 @@ sub validate_file {
 		. 'or a control character'
 	    );
 
-	# check if the final "symbol" is a single character or single emoji.
-	unless (exists $GRANDFATHERED{$login}) {
-		my $is_character = $symbol =~ /\A[\p{L}\p{N}\p{P}\p{S}]\z/
-		    && $symbol !~ /\p{Default_Ignorable_Code_Point}/;
-		my $is_emoji = exists $emojis->{$symbol};
-		($is_emoji || $is_character)
-		    or fail('final symbol must be a single character or emoji');
-	}
+	# grandfathered symbols still need to pass the grapheme/control checks
+	return 1 if exists $GRANDFATHERED{$login};
 
-	# ok! at this point we are sure the file is valid (probably)
-	print "OK: $file\n";
+	# non-emoji symbols must be a single allowed character
+	my $is_char = $symbol =~ /\A[\p{L}\p{N}\p{P}\p{S}]\z/
+	    && $symbol !~ /\p{Default_Ignorable_Code_Point}/;
+	$is_char or fail('final symbol must be a single character or emoji');
+
+	return 1;
 }
 
 my %emojis = load_emojis();
 my $code = 0;
 for my $arg (@ARGV) {
 	local $@;
-	eval { validate_file($arg, \%emojis); 1 } or do {
+	if (eval { validate_file($arg, \%emojis) }) {
+		print "OK: $arg\n";
+	} else {
 		print STDERR "FAIL: $arg - $@";
 		$code = 1;
-	};
+	}
 }
 
 exit $code;
